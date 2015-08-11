@@ -25,20 +25,27 @@
 
 package org.broadinstitute.gatk.engine.datasources.reads;
 
+import htsjdk.samtools.SAMFileSpan;
+import htsjdk.samtools.SAMProgramRecord;
+import htsjdk.samtools.SAMRecord;
+import htsjdk.samtools.ValidationStringency;
+import htsjdk.samtools.cram.structure.ContainerIO;
 import htsjdk.samtools.reference.IndexedFastaSequenceFile;
-import htsjdk.samtools.*;
-import org.broadinstitute.gatk.utils.BaseTest;
-import org.broadinstitute.gatk.utils.commandline.Tags;
-import org.broadinstitute.gatk.utils.ValidationExclusion;
+import htsjdk.samtools.util.Log;
 import org.broadinstitute.gatk.engine.filters.ReadFilter;
 import org.broadinstitute.gatk.engine.iterators.ReadTransformer;
-import org.broadinstitute.gatk.utils.iterators.GATKSAMIterator;
 import org.broadinstitute.gatk.engine.resourcemanagement.ThreadAllocation;
+import org.broadinstitute.gatk.utils.BaseTest;
 import org.broadinstitute.gatk.utils.GenomeLoc;
 import org.broadinstitute.gatk.utils.GenomeLocParser;
+import org.broadinstitute.gatk.utils.GenomeLocSortedSet;
+import org.broadinstitute.gatk.utils.UnvalidatingGenomeLoc;
+import org.broadinstitute.gatk.utils.ValidationExclusion;
+import org.broadinstitute.gatk.utils.commandline.Tags;
 import org.broadinstitute.gatk.utils.exceptions.UserException;
 import org.broadinstitute.gatk.utils.fasta.CachingIndexedFastaSequenceFile;
 import org.broadinstitute.gatk.utils.interval.IntervalMergingRule;
+import org.broadinstitute.gatk.utils.iterators.GATKSAMIterator;
 import org.broadinstitute.gatk.utils.sam.SAMReaderID;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -77,7 +84,7 @@ public class SAMDataSourceUnitTest extends BaseTest {
         readers = new ArrayList<SAMReaderID>();
 
         // sequence
-        referenceFile = new File(b36KGReference);
+        referenceFile = new File("c:/temp/20.fa");
         seq = new CachingIndexedFastaSequenceFile(referenceFile);
         genomeLocParser = new GenomeLocParser(seq.getSequenceDictionary());
     }
@@ -98,9 +105,16 @@ public class SAMDataSourceUnitTest extends BaseTest {
     @Test
     public void testLinearBreakIterateAll() {
         logger.warn("Executing testLinearBreakIterateAll");
+        Log.setGlobalLogLevel(Log.LogLevel.ERROR);
+        ContainerIO.containerListeners.add(new ContainerIO.ContainerListener() {
+            @Override
+            public void containerRead(ContainerIO.ContainerReadEvent event) {
+                System.out.println(event);
+            }
+        });
 
         // setup the data
-        readers.add(new SAMReaderID(new File(validationDataLocation+"/NA12878.chrom6.SLX.SRP000032.2009_06.selected.bam"),new Tags()));
+        readers.add(new SAMReaderID(new File("c:/temp/HG00096.mapped.illumina.mosaik.GBR.exome.20110411.chr20.bam.cram"),new Tags()));
 
         // the sharding strat.
         SAMDataSource data = new SAMDataSource(
@@ -118,6 +132,9 @@ public class SAMDataSourceUnitTest extends BaseTest {
                 false);
 
         Iterable<Shard> strat = data.createShardIteratorOverMappedReads(new LocusShardBalancer());
+        final GenomeLocSortedSet locs = new GenomeLocSortedSet(genomeLocParser);
+        locs.add(new UnvalidatingGenomeLoc("20", 19, 62963713, 63000000)); //62 961 127
+        strat= data.createShardIteratorOverIntervals(locs, new LocusShardBalancer());
         int count = 0;
 
         try {
@@ -126,14 +143,21 @@ public class SAMDataSourceUnitTest extends BaseTest {
                 count++;
 
                 GenomeLoc firstLocus = sh.getGenomeLocs().get(0), lastLocus = sh.getGenomeLocs().get(sh.getGenomeLocs().size()-1);
-                logger.debug("Start : " + firstLocus.getStart() + " stop : " + lastLocus.getStop() + " contig " + firstLocus.getContig());
-                logger.debug("count = " + count);
+                System.out.println("Start : " + firstLocus.getStart() + " stop : " + lastLocus.getStop() + " contig " + firstLocus.getContig());
+                System.out.println("count = " + count);
+                for (SAMFileSpan span:sh.getFileSpans().values()) {
+                    System.out.printf("span: %s\n", span.toString());
+                }
                 GATKSAMIterator datum = data.seek(sh);
+                System.out.println(datum.hasNext());
 
                 // for the first couple of shards make sure we can see the reads
                 if (count < 5) {
+                    long recordCounter =0;
                     for (SAMRecord r : datum) {
+                        recordCounter++;
                     }
+                    System.out.println("found " +recordCounter + " records.");
                     readCount++;
                 }
                 datum.close();

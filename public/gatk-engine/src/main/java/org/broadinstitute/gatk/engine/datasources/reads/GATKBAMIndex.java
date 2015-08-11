@@ -29,6 +29,11 @@ import htsjdk.samtools.Bin;
 import htsjdk.samtools.GATKBin;
 import htsjdk.samtools.GATKChunk;
 import htsjdk.samtools.LinearIndex;
+import htsjdk.samtools.SAMSequenceDictionary;
+import htsjdk.samtools.SAMSequenceRecord;
+import htsjdk.samtools.cram.CRAIIndex;
+import htsjdk.samtools.reference.IndexedFastaSequenceFile;
+import htsjdk.samtools.reference.ReferenceSequenceFileFactory;
 import htsjdk.samtools.seekablestream.SeekableBufferedStream;
 import htsjdk.samtools.seekablestream.SeekableFileStream;
 import org.broadinstitute.gatk.utils.exceptions.ReviewedGATKException;
@@ -84,10 +89,41 @@ public class GATKBAMIndex {
      * A cache of the starting positions of the sequences.
      */
     private final long[] sequenceStartCache;
+    private SAMSequenceDictionary dictionary;
 
     private SeekableFileStream fileStream;
     private SeekableBufferedStream bufferedStream;
     private long fileLength;
+
+    public GATKBAMIndex(final File file, SAMSequenceDictionary dictionary) {
+        this.dictionary = dictionary;
+        mFile = file;
+        // Open the file stream.
+        openIndexFile();
+
+        // Verify the magic number.
+        seek(0);
+        final byte[] buffer = readBytes(4);
+        if (!Arrays.equals(buffer, BAM_INDEX_MAGIC)) {
+            throw new ReviewedGATKException("Invalid file header in BAM index " + mFile +
+                    ": " + new String(buffer));
+        }
+
+        seek(4);
+
+        sequenceCount = readInteger();
+
+        // Create a cache of the starting position of each sequence.  Initialize it to -1.
+        sequenceStartCache = new long[sequenceCount];
+        for(int i = 1; i < sequenceCount; i++)
+            sequenceStartCache[i] = -1;
+
+        // Seed the first element in the array with the current position.
+        if(sequenceCount > 0)
+            sequenceStartCache[0] = position();
+
+        closeIndexFile();
+    }
 
     public GATKBAMIndex(final File file) {
         mFile = file;
@@ -304,15 +340,17 @@ public class GATKBAMIndex {
     }
 
 
-
     private void openIndexFile() {
         try {
             fileStream = new SeekableFileStream(mFile);
-            bufferedStream = new SeekableBufferedStream(fileStream,BUFFERED_STREAM_BUFFER_SIZE);
-            fileLength=bufferedStream.length();
-        }
-        catch (IOException exc) {
-            throw new ReviewedGATKException("Unable to open index file (" + exc.getMessage() +")" + mFile, exc);
+            if (mFile.getName().endsWith(".crai"))
+                bufferedStream = new SeekableBufferedStream(CRAIIndex.openCraiFileAsBaiStream(mFile, dictionary));
+            else
+                bufferedStream = new SeekableBufferedStream(fileStream, BUFFERED_STREAM_BUFFER_SIZE);
+
+            fileLength = bufferedStream.length();
+        } catch (IOException exc) {
+            throw new ReviewedGATKException("Unable to open index file (" + exc.getMessage() + ")" + mFile, exc);
         }
     }
 

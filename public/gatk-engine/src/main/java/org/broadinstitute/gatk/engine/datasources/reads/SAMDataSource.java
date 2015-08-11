@@ -28,6 +28,8 @@ package org.broadinstitute.gatk.engine.datasources.reads;
 import htsjdk.samtools.MergingSamRecordIterator;
 import htsjdk.samtools.SamFileHeaderMerger;
 import htsjdk.samtools.*;
+import htsjdk.samtools.reference.ReferenceSequenceFile;
+import htsjdk.samtools.reference.ReferenceSequenceFileFactory;
 import htsjdk.samtools.util.CloseableIterator;
 import htsjdk.samtools.util.CloserUtil;
 import htsjdk.samtools.util.RuntimeIOException;
@@ -50,9 +52,11 @@ import org.broadinstitute.gatk.utils.interval.IntervalMergingRule;
 import org.broadinstitute.gatk.utils.iterators.GATKSAMIterator;
 import org.broadinstitute.gatk.utils.iterators.GATKSAMIteratorAdapter;
 import org.broadinstitute.gatk.utils.sam.GATKSAMReadGroupRecord;
-import org.broadinstitute.gatk.utils.sam.GATKSAMRecord;
 import org.broadinstitute.gatk.utils.sam.GATKSAMRecordIterator;
 import org.broadinstitute.gatk.utils.sam.SAMReaderID;
+import htsjdk.samtools.GATKBAMFileSpan;
+import htsjdk.samtools.GATKChunk;
+import htsjdk.samtools.PicardNamespaceUtils;
 
 import java.io.File;
 import java.util.*;
@@ -374,8 +378,17 @@ public class SAMDataSource {
 
         for(SAMReaderID id: readerIDs) {
             File indexFile = findIndexFile(id.getSamFile());
+            indexFile = null;
             if(indexFile != null)
                 bamIndices.put(id,new GATKBAMIndex(indexFile));
+            else {
+                File f = new File (id.getSamFile().getAbsolutePath()+".crai") ;
+                if (f.exists()) {
+                    final ReferenceSequenceFile sequenceFile = ReferenceSequenceFileFactory.getReferenceSequenceFile(referenceFile);
+                    bamIndices.put(id,new GATKBAMIndex(f, sequenceFile.getSequenceDictionary()));
+                }
+
+            }
         }
 
         resourcePool.releaseReaders(readers);

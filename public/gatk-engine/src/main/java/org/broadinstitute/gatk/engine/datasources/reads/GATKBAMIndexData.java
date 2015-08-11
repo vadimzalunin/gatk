@@ -26,6 +26,9 @@
 package org.broadinstitute.gatk.engine.datasources.reads;
 
 import htsjdk.samtools.*;
+import htsjdk.samtools.GATKBAMFileSpan;
+import htsjdk.samtools.GATKBin;
+import htsjdk.samtools.GATKChunk;
 
 import java.util.ArrayList;
 import java.util.Collections;
